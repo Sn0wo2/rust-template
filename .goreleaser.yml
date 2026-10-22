@@ -1,0 +1,123 @@
+version: 2
+
+builds:
+  - &darwin-build
+    id: darwin-arm64
+    builder: rust
+    command: build
+    binary: app
+    skip: '{{ ne (envOrDefault "BUILD_PLATFORM" "linux-windows") "macos" }}'
+    targets: [aarch64-apple-darwin]
+    flags: [--release, --package=app, --bin=app]
+
+  - &linux-build
+    <<: *darwin-build
+    id: linux-arm
+    tool: ./scripts/cargo-or-zigbuild.js
+    skip: '{{ ne (envOrDefault "BUILD_PLATFORM" "linux-windows") "linux-windows" }}'
+    targets: [aarch64-unknown-linux-gnu, armv7-unknown-linux-gnueabihf]
+
+  - &linux-amd64-build
+    <<: *linux-build
+    id: linux-windows-amd64-v2
+    targets: [x86_64-unknown-linux-gnu, x86_64-pc-windows-gnu]
+    env:
+      - 'RUSTFLAGS={{ index .Env "RUSTFLAGS" }} -C target-cpu=x86-64-v2'
+
+  - <<: *linux-amd64-build
+    id: linux-windows-amd64-v3
+    env:
+      - 'RUSTFLAGS={{ index .Env "RUSTFLAGS" }} -C target-cpu=x86-64-v3'
+
+  - &darwin-amd64-build
+    <<: *darwin-build
+    id: darwin-amd64-v2
+    targets: [x86_64-apple-darwin]
+    env:
+      - 'RUSTFLAGS={{ index .Env "RUSTFLAGS" }} -C target-cpu=x86-64-v2'
+
+  - <<: *darwin-amd64-build
+    id: darwin-amd64-v3
+    env:
+      - 'RUSTFLAGS={{ index .Env "RUSTFLAGS" }} -C target-cpu=x86-64-v3'
+
+dockers_v2:
+  - ids:
+      - linux-windows-amd64-v2
+      - linux-arm
+    images:
+      - ghcr.io/owner/{{ .ProjectName }}
+    tags:
+      - "v{{ .Version }}"
+      - "{{ if not .Prerelease }}latest{{ end }}"
+      - "beta-latest"
+    flags:
+      - '{{ if eq (index .Env "GITHUB_ACTIONS") "true" }}--cache-from=type=gha,version=2,scope={{ .ProjectName }}{{ end }}'
+      - '{{ if eq (index .Env "GITHUB_ACTIONS") "true" }}--cache-to=type=gha,version=2,mode=max,scope={{ .ProjectName }},ignore-error=true{{ end }}'
+    labels:
+      org.opencontainers.image.title: "{{ .ProjectName }}"
+      org.opencontainers.image.source: "https://github.com/owner/{{ .ProjectName }}"
+      org.opencontainers.image.url: "https://github.com/owner/{{ .ProjectName }}"
+      org.opencontainers.image.licenses: "Apache-2.0"
+      org.opencontainers.image.version: "{{ .Version }}"
+      org.opencontainers.image.revision: "{{ .Commit }}"
+      org.opencontainers.image.created: "{{ .Date }}"
+
+archives:
+  - &amd64-archive
+    id: amd64-v2
+    ids: [linux-windows-amd64-v2, darwin-amd64-v2]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}_v2"
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files: ["LICENS[E]", "README.m[d]"]
+
+  - <<: *amd64-archive
+    id: amd64-v3
+    ids: [linux-windows-amd64-v3, darwin-amd64-v3]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}_v3"
+
+  - id: arm
+    ids: [linux-arm, darwin-arm64]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ if eq .Arch \"arm\" }}armv{{ .Arm }}{{ else }}{{ .Arch }}{{ end }}"
+    files: ["LICENS[E]", "README.m[d]"]
+
+snapshot:
+  version_template: "{{ .Version }}-next"
+
+changelog:
+  use: github
+  groups:
+    - title: 「Features」
+      regexp: "^.*feat(?:\\([^)]+\\))?:+.*$"
+    - title: 「Bug Fixes」
+      regexp: "^.*fix(?:\\([^)]+\\))?:+.*$"
+      order: 1
+    - title: 「Performance Improvements」
+      regexp: "^.*perf(?:\\([^)]+\\))?:+.*$"
+      order: 2
+    - title: 「Documentation」
+      regexp: "^.*docs(?:\\([^)]+\\))?:+.*$"
+      order: 3
+    - title: 「Maintenance & Chores」
+      regexp: "^.*chore(?:\\([^)]+\\))?:+.*$"
+      order: 4
+    - title: 「Code Refactoring」
+      regexp: "^.*refactor(?:\\([^)]+\\))?:+.*$"
+      order: 5
+    - title: 「Tests」
+      regexp: "^.*test(?:\\([^)]+\\))?:+.*$"
+      order: 6
+    - title: 「Dependency Updates」
+      regexp: "^.*deps(?:\\([^)]+\\))?:+.*$"
+      order: 7
+    - title: 「Others」
+      order: 999
+
+release:
+  prerelease: auto
+  header: |
+    {{ if .Prerelease }}
+    > ⚠️ **WARNING: This is a pre-release version and is not recommended for production use.**
+    {{ end }}
