@@ -115,8 +115,8 @@ jobs:
           git fetch origin "refs/tags/v$VERSION"
           git checkout --detach FETCH_HEAD
 
-      - name: Bump version
-        if: github.event_name == 'workflow_dispatch' && !inputs.snapshot && steps.tag.outputs.retry != 'true'
+      - name: Sync workspace version
+        if: ${{ !inputs.snapshot }}
         run: cargo set-version --workspace "$VERSION"
 
       - name: Verify workspace versions and publishable crates
@@ -190,6 +190,20 @@ jobs:
         with:
           ref: ${{ needs.prepare.outputs.sha }}
           fetch-depth: 0
+
+      - name: Set up Rust
+        if: ${{ needs.prepare.outputs.has_publishable_crates == 'true' }}
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-edit
+        if: ${{ needs.prepare.outputs.has_publishable_crates == 'true' }}
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-edit
+
+      - name: Sync workspace version
+        if: ${{ needs.prepare.outputs.has_publishable_crates == 'true' }}
+        run: cargo set-version --workspace "$VERSION"
 
       - name: Download build artifacts
         uses: actions/download-artifact@v8
