@@ -41,7 +41,7 @@ publish-dry:
 	cargo publish --dry-run --allow-dirty
 
 release release-snapshot:
-	goreleaser release $(if $(filter release-snapshot,$@),--snapshot) --clean --skip=publish,validate
+	goreleaser release --clean $(if $(filter release-snapshot,$@),--snapshot,--skip=publish,validate)
 
 clean:
 	cargo clean

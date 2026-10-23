@@ -1,14 +1,14 @@
 version: 2
+project_name: rust-template
 
 builds:
   - &darwin-build
     id: darwin-arm64
     builder: rust
-    command: build
-    binary: app
+    binary: rust-template
     skip: '{{ ne (envOrDefault "BUILD_PLATFORM" "linux-windows") "macos" }}'
     targets: [aarch64-apple-darwin]
-    flags: [--release, --package=app, --bin=app]
+    flags: [--release, --package=rust-template, --bin=rust-template]
 
   - &linux-build
     <<: *darwin-build
@@ -41,28 +41,6 @@ builds:
     env:
       - 'RUSTFLAGS={{ index .Env "RUSTFLAGS" }} -C target-cpu=x86-64-v3'
 
-dockers_v2:
-  - ids:
-      - linux-windows-amd64-v2
-      - linux-arm
-    images:
-      - ghcr.io/owner/{{ .ProjectName }}
-    tags:
-      - "v{{ .Version }}"
-      - "{{ if not .Prerelease }}latest{{ end }}"
-      - "beta-latest"
-    flags:
-      - '{{ if eq (index .Env "GITHUB_ACTIONS") "true" }}--cache-from=type=gha,version=2,scope={{ .ProjectName }}{{ end }}'
-      - '{{ if eq (index .Env "GITHUB_ACTIONS") "true" }}--cache-to=type=gha,version=2,mode=max,scope={{ .ProjectName }},ignore-error=true{{ end }}'
-    labels:
-      org.opencontainers.image.title: "{{ .ProjectName }}"
-      org.opencontainers.image.source: "https://github.com/owner/{{ .ProjectName }}"
-      org.opencontainers.image.url: "https://github.com/owner/{{ .ProjectName }}"
-      org.opencontainers.image.licenses: "Apache-2.0"
-      org.opencontainers.image.version: "{{ .Version }}"
-      org.opencontainers.image.revision: "{{ .Commit }}"
-      org.opencontainers.image.created: "{{ .Date }}"
-
 archives:
   - &amd64-archive
     id: amd64-v2
@@ -86,38 +64,8 @@ archives:
 snapshot:
   version_template: "{{ .Version }}-next"
 
-changelog:
-  use: github
-  groups:
-    - title: 「Features」
-      regexp: "^.*feat(?:\\([^)]+\\))?:+.*$"
-    - title: 「Bug Fixes」
-      regexp: "^.*fix(?:\\([^)]+\\))?:+.*$"
-      order: 1
-    - title: 「Performance Improvements」
-      regexp: "^.*perf(?:\\([^)]+\\))?:+.*$"
-      order: 2
-    - title: 「Documentation」
-      regexp: "^.*docs(?:\\([^)]+\\))?:+.*$"
-      order: 3
-    - title: 「Maintenance & Chores」
-      regexp: "^.*chore(?:\\([^)]+\\))?:+.*$"
-      order: 4
-    - title: 「Code Refactoring」
-      regexp: "^.*refactor(?:\\([^)]+\\))?:+.*$"
-      order: 5
-    - title: 「Tests」
-      regexp: "^.*test(?:\\([^)]+\\))?:+.*$"
-      order: 6
-    - title: 「Dependency Updates」
-      regexp: "^.*deps(?:\\([^)]+\\))?:+.*$"
-      order: 7
-    - title: 「Others」
-      order: 999
+checksum:
+  disable: true
 
-release:
-  prerelease: auto
-  header: |
-    {{ if .Prerelease }}
-    > ⚠️ **WARNING: This is a pre-release version and is not recommended for production use.**
-    {{ end }}
+changelog:
+  disable: true

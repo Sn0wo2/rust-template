@@ -1,4 +1,4 @@
-name: Rust Build
+name: Build
 
 on:
   workflow_call:
@@ -11,8 +11,7 @@ on:
         type: boolean
         default: true
 
-permissions:
-  contents: read
+permissions: {}
 
 env:
   GORELEASER_CURRENT_TAG: ${{ inputs.version && format('v{0}', inputs.version) }}
@@ -21,6 +20,8 @@ jobs:
   build:
     name: Build ${{ matrix.platform }}
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -38,21 +39,18 @@ jobs:
     env:
       BUILD_PLATFORM: ${{ matrix.platform }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v7
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref || github.ref }}
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.targets }}
 
-      - name: Install cargo-edit
+      - uses: taiki-e/install-action@v2
         if: ${{ !inputs.snapshot }}
-        uses: taiki-e/install-action@v2
         with:
           tool: cargo-edit
 
@@ -64,12 +62,12 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
+          shared-key: build-${{ matrix.platform }}
           cache-workspace-crates: true
-          cache-on-failure: true
+          save-if: ${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
 
-      - name: Install cargo-zigbuild
+      - uses: taiki-e/install-action@v2
         if: runner.os == 'Linux'
-        uses: taiki-e/install-action@v2
         with:
           tool: cargo-zigbuild
 
@@ -77,29 +75,49 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y mingw-w64
 
-      - name: Set up Zig
+      - uses: mlugg/setup-zig@v2
         if: runner.os == 'Linux'
-        uses: mlugg/setup-zig@v2
 
       - name: Ensure build script is executable
         if: runner.os == 'Linux'
         run: chmod +x scripts/cargo-or-zigbuild.js
 
-      - name: Install GoReleaser
+      - name: Build and package archives
         uses: goreleaser/goreleaser-action@v7
         with:
-          install-only: true
+          args: release --clean ${{ inputs.snapshot && '--snapshot' || '--skip=publish,validate' }}
 
-      - name: Package archives
-        run: ${{ inputs.snapshot && 'make release-snapshot' || 'make release' }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ github.event.repository.name }}-${{ matrix.platform }}-builds
           path: ${{ matrix.artifacts }}
           compression-level: 0
           if-no-files-found: error
           retention-days: ${{ inputs.snapshot && 7 || 30 }}
+
+      - name: Stage container binaries
+        if: ${{ matrix.platform == 'linux-windows' && !inputs.snapshot }}
+        run: |
+          set -euo pipefail
+          stage_binary() {
+            local build_id="$1"
+            local target="$2"
+            local destination="$3"
+            local source
+            source=$(jq -er --arg id "$build_id" --arg target "$target" '
+              [.[] | select(.type == "Binary" and .extra.ID == $id and .extra.Binary == "rust-template" and .target == $target) | .path]
+              | if length == 1 then .[0] else error("expected one matching binary artifact") end
+            ' dist/artifacts.json)
+            install -D -m 0755 "$source" "container-context/$destination/rust-template"
+          }
+          stage_binary linux-windows-amd64-v2 x86_64-unknown-linux-gnu linux/amd64
+          stage_binary linux-arm aarch64-unknown-linux-gnu linux/arm64
+
+      - uses: actions/upload-artifact@v7
+        if: ${{ matrix.platform == 'linux-windows' && !inputs.snapshot }}
+        with:
+          name: container-binaries
+          path: container-context
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 1
